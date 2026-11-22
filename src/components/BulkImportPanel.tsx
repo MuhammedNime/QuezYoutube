@@ -1,0 +1,241 @@
+import React, { useRef, useState } from 'react';
+import { Download, FileUp, Layers, RotateCcw, Sparkles } from 'lucide-react';
+import { CHANNEL_SAMPLE_SLIDES, QuestionSlide, QuizProject } from '../types/quiz';
+
+interface BulkImportPanelProps {
+  project: QuizProject;
+  onReplaceSlides: (slides: QuestionSlide[]) => void;
+  onAppendSlides: (slides: QuestionSlide[]) => void;
+  onImportFullProject: (project: QuizProject) => void;
+}
+
+const SAMPLE_TEXT = `ما هي عاصمة دولة قطر؟
+الكويت
+* الدوحة
+المنامة
+مسقط
+تقع مدينة الدوحة على ساحل الخليج العربي
+
+كم عدد ألوان قوس قزح؟
+5 ألوان
+6 ألوان
+* 7 ألوان
+8 ألوان`;
+
+export const BulkImportPanel: React.FC<BulkImportPanelProps> = ({
+  project,
+  onReplaceSlides,
+  onAppendSlides,
+  onImportFullProject,
+}) => {
+  const [rawText, setRawText] = useState('');
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const projectFileRef = useRef<HTMLInputElement | null>(null);
+
+  const parseBulkText = (text: string): QuestionSlide[] => {
+    const blocks = text
+      .trim()
+      .split(/\n\s*\n+/)
+      .map((b) => b.trim())
+      .filter(Boolean);
+
+    const parsed: QuestionSlide[] = [];
+
+    blocks.forEach((block, bIdx) => {
+      const lines = block
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+      if (lines.length < 5) return;
+
+      const question = lines[0];
+      const rawOpts = lines.slice(1, 5);
+      let correctIndex: 0 | 1 | 2 | 3 = 0;
+
+      const cleanOpts = rawOpts.map((opt, idx) => {
+        if (opt.startsWith('*') || opt.startsWith('✓') || opt.startsWith('+')) {
+          correctIndex = idx as 0 | 1 | 2 | 3;
+          return opt.replace(/^[*✓+]\s*/, '').trim();
+        }
+        return opt;
+      }) as [string, string, string, string];
+
+      const explanationText = lines[5] ? lines.slice(5).join(' ') : '';
+
+      parsed.push({
+        id: `slide-${Date.now()}-${bIdx}`,
+        badgeText: `السؤال ${bIdx + 1}`,
+        question,
+        options: cleanOpts,
+        correctIndex,
+        explanationText,
+      });
+    });
+
+    return parsed;
+  };
+
+  const handleImport = (mode: 'replace' | 'append') => {
+    const slides = parseBulkText(rawText);
+    if (slides.length === 0) {
+      setFeedback(
+        'تأكد من كتابة السؤال في السطر الأول ثم 4 خيارات في الأسطر الأربعة التالية، وضع علامة * قبل الإجابة الصحيحة.'
+      );
+      return;
+    }
+
+    if (mode === 'replace') {
+      onReplaceSlides(slides);
+      setFeedback(`تم استيراد ${slides.length} سؤال واستبدال القائمة الحالية.`);
+    } else {
+      onAppendSlides(slides);
+      setFeedback(`تمت إضافة ${slides.length} سؤال إلى القائمة الحالية.`);
+    }
+    setRawText('');
+  };
+
+  const handleLoadChannelSamples = () => {
+    const cloned = CHANNEL_SAMPLE_SLIDES.map((s, i) => ({
+      ...s,
+      id: `channel-slide-${Date.now()}-${i}`,
+      options: [...s.options] as [string, string, string, string],
+    }));
+    onReplaceSlides(cloned);
+    setFeedback('تم تحميل أسئلة القناة الافتراضية الأربعة بنجاح.');
+  };
+
+  const handleDownloadBackup = () => {
+    const json = JSON.stringify(project, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `shorts-quiz-project-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleLoadBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const content = await file.text();
+      const parsed = JSON.parse(content) as QuizProject;
+      if (parsed && Array.isArray(parsed.slides) && parsed.template && parsed.timing) {
+        onImportFullProject(parsed);
+        setFeedback('تم استرجاع ملف المشروع بنجاح مع القالب والأصوات.');
+      } else {
+        setFeedback('ملف المشروع غير صالح.');
+      }
+    } catch {
+      setFeedback('تعذر قراءة ملف المشروع.');
+    }
+    e.target.value = '';
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-[var(--ptxt)]">
+            استيراد عدة أسئلة دفعة واحدة
+          </h2>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleLoadChannelSamples}
+              className="flex items-center gap-1 text-xs text-[var(--gold)] hover:underline font-bold cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>أمثلة القناة (4)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRawText(SAMPLE_TEXT)}
+              className="flex items-center gap-1 text-xs text-[#00B050] hover:underline font-bold cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>نموذج نصي</span>
+            </button>
+          </div>
+        </div>
+
+        <p className="text-xs text-[var(--pmuted)] leading-relaxed">
+          اكتب كل سؤال في سطر، ثم تحته 4 خيارات، وضع نجمة{' '}
+          <span className="text-[#00B050] font-bold">*</span> قبل الخيار الصحيح، واترك
+          سطراً فارغاً بين كل سؤال والآخر.
+        </p>
+
+        <textarea
+          rows={8}
+          value={rawText}
+          onChange={(e) => setRawText(e.target.value)}
+          placeholder={`نص السؤال هنا\nالخيار الأول\n* الخيار الثاني الصحيح\nالخيار الثالث\nالخيار الرابع\nمعلومة إضافية اختيارية`}
+          className="w-full p-3.5 rounded-xl bg-[var(--surface)] border border-[var(--pline)] focus:border-[#00B050] focus:outline-none text-xs text-[var(--ptxt)] placeholder:text-[var(--pmuted)] leading-relaxed"
+        />
+
+        {feedback && (
+          <div className="px-3 py-2 rounded-lg bg-[#00B050]/12 border border-[#00B050]/35 text-xs text-[#00B050] dark:text-[#6ee7b7]">
+            {feedback}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            onClick={() => handleImport('append')}
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-[#00B050] hover:bg-[#00c85b] text-white text-xs font-bold transition-colors cursor-pointer"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>إضافة للقائمة</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleImport('replace')}
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-[var(--surface)] hover:border-[var(--gold)] text-[var(--ptxt)] border border-[var(--pline)] text-xs font-semibold transition-colors cursor-pointer"
+          >
+            <span>استبدال الأسئلة</span>
+          </button>
+        </div>
+      </section>
+
+      {/* Project Backup Section */}
+      <section className="flex flex-col gap-3 border-t border-[var(--pline)] pt-5">
+        <h2 className="text-sm font-bold text-[var(--ptxt)]">
+          حفظ واسترجاع القالب والمشروع كملف
+        </h2>
+        <p className="text-xs text-[var(--pmuted)] leading-relaxed">
+          يحفظ جميع الأسئلة مع القالب والأصوات المخصصة في ملف واحد لفتحه من أي جهاز.
+        </p>
+
+        <input
+          ref={projectFileRef}
+          type="file"
+          accept=".json,application/json"
+          onChange={(e) => void handleLoadBackup(e)}
+          className="hidden"
+        />
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            onClick={handleDownloadBackup}
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-[var(--surface)] hover:border-[var(--gold)] text-[var(--ptxt)] border border-[var(--pline)] text-xs font-semibold transition-colors cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5 text-[var(--gold)]" />
+            <span>حفظ ملف المشروع</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => projectFileRef.current?.click()}
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-[var(--surface)] hover:border-[var(--gold)] text-[var(--ptxt)] border border-[var(--pline)] text-xs font-semibold transition-colors cursor-pointer"
+          >
+            <FileUp className="w-3.5 h-3.5 text-[#00B050]" />
+            <span>فتح ملف مشروع</span>
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+};
