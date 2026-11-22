@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Download, FileUp, Layers, RotateCcw, Sparkles } from 'lucide-react';
 import { CHANNEL_SAMPLE_SLIDES, QuestionSlide, QuizProject } from '../types/quiz';
+import { fileToImportText } from '../utils/fileImport';
 
 interface BulkImportPanelProps {
   project: QuizProject;
@@ -31,6 +32,30 @@ export const BulkImportPanel: React.FC<BulkImportPanelProps> = ({
   const [rawText, setRawText] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
   const projectFileRef = useRef<HTMLInputElement | null>(null);
+  const questionsFileRef = useRef<HTMLInputElement | null>(null);
+
+  const handleQuestionsFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setFeedback('جارٍ قراءة الملف...');
+      const res = await fileToImportText(file);
+      if (res.count === 0) {
+        setFeedback('ما لقيت أسئلة بالملف. تأكد إن كل سؤال تحته 4 خيارات.');
+      } else {
+        setRawText(res.text);
+        setFeedback(
+          `تمت قراءة ${res.count} سؤال، راجعهم بالمربع تحت ثم اضغط "إضافة للقائمة".` +
+            (res.missing > 0
+              ? ` (${res.missing} سؤال بدون علامة إجابة صحيحة، اعتُبر الخيار الأول صحيحاً، عدّله بوضع * قبل الجواب الصحيح)`
+              : '')
+        );
+      }
+    } catch {
+      setFeedback('تعذرت قراءة الملف. جرّب ملف Word (.docx) أو Excel (.xlsx) أو CSV أو TXT.');
+    }
+    e.target.value = '';
+  };
 
   const parseBulkText = (text: string): QuestionSlide[] => {
     const blocks = text
@@ -161,10 +186,26 @@ export const BulkImportPanel: React.FC<BulkImportPanelProps> = ({
         </div>
 
         <p className="text-xs text-[var(--pmuted)] leading-relaxed">
-          اكتب كل سؤال في سطر، ثم تحته 4 خيارات، وضع نجمة{' '}
+          اكتب كل سؤال في سطر (أو ارفع ملف Word فيه الجواب الصحيح بخط عريض، أو Excel أعمدته: السؤال، 4 خيارات، رقم الصحيح، معلومة)، ثم تحته 4 خيارات، وضع نجمة{' '}
           <span className="text-[#00B050] font-bold">*</span> قبل الخيار الصحيح، واترك
           سطراً فارغاً بين كل سؤال والآخر.
         </p>
+
+        <input
+          ref={questionsFileRef}
+          type="file"
+          accept=".docx,.xlsx,.csv,.txt"
+          onChange={(e) => void handleQuestionsFile(e)}
+          className="hidden"
+        />
+        <button
+          type="button"
+          onClick={() => questionsFileRef.current?.click()}
+          className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-[var(--surface)] hover:border-[var(--gold)] text-[var(--ptxt)] border border-[var(--pline)] text-xs font-semibold transition-colors cursor-pointer"
+        >
+          <FileUp className="w-3.5 h-3.5 text-[#00B050]" />
+          <span>استيراد من ملف (Word / Excel / CSV / TXT)</span>
+        </button>
 
         <textarea
           rows={8}
