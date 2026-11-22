@@ -28,7 +28,7 @@ jobs:
           java-version: '21'
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Build production web bundle
         env:
