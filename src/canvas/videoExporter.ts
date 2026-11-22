@@ -28,12 +28,14 @@ export interface ExportResult {
 }
 
 function getPreferredMimeType(): { mimeType: string; extension: 'mp4' | 'webm' } {
+  // MP4 أولاً (أوسع توافقاً مع برامج المونتاج والموبايلات)، ثم WebM كاحتياط
   const candidates: { mimeType: string; extension: 'mp4' | 'webm' }[] = [
+    { mimeType: 'video/mp4;codecs=avc1.640028,mp4a.40.2', extension: 'mp4' },
+    { mimeType: 'video/mp4;codecs=avc1,mp4a.40.2', extension: 'mp4' },
+    { mimeType: 'video/mp4', extension: 'mp4' },
     { mimeType: 'video/webm;codecs=vp9,opus', extension: 'webm' },
     { mimeType: 'video/webm;codecs=vp8,opus', extension: 'webm' },
     { mimeType: 'video/webm', extension: 'webm' },
-    { mimeType: 'video/mp4;codecs=avc1,mp4a.40.2', extension: 'mp4' },
-    { mimeType: 'video/mp4', extension: 'mp4' },
   ];
 
   for (const c of candidates) {
@@ -150,6 +152,17 @@ export async function exportQuizVideo(
 
   let bgSource: AudioBufferSourceNode | null = null;
 
+  // منع انطفاء الشاشة أثناء التصدير (حتى ما ينقطع التسجيل)
+  let wakeLock: { release: () => Promise<void> } | null = null;
+  try {
+    const wl = (navigator as unknown as {
+      wakeLock?: { request: (t: 'screen') => Promise<{ release: () => Promise<void> }> };
+    }).wakeLock;
+    if (wl) wakeLock = await wl.request('screen');
+  } catch {
+    // ignore
+  }
+
   return await new Promise<ExportResult>((resolve, reject) => {
     let timerId = 0;
     let cleanedUp = false;
@@ -174,6 +187,10 @@ export async function exportQuizVideo(
         }
       }
       combinedStream.getTracks().forEach((t) => t.stop());
+      if (wakeLock) {
+        void wakeLock.release().catch(() => undefined);
+        wakeLock = null;
+      }
       if (exportAudioCtx.state !== 'closed') {
         void exportAudioCtx.close();
       }
